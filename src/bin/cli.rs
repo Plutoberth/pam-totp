@@ -1,13 +1,12 @@
 use std::{
     error::Error,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use structopt::StructOpt;
 use text_io::read;
 
 use std::fs::File;
-use std::time::SystemTime;
 use totp_rs::{Algorithm, TOTP};
 
 use getrandom::getrandom;
@@ -57,12 +56,8 @@ fn yesno(prompt: &str) -> bool {
     }
 }
 
-fn expand_to_pathbuf(path_str: &str) -> PathBuf {
-    let mut path = String::new();
-    path.push_str(&shellexpand::tilde(path_str));
-    let mut pathbuf = PathBuf::new();
-    pathbuf.push(path);
-    pathbuf
+fn expand(path_str: &str) -> String {
+    shellexpand::tilde(path_str).into()
 }
 
 fn get_totp_secret() -> Vec<u8> {
@@ -75,20 +70,8 @@ fn get_label() -> String {
     format!("{}@{}", whoami::username(), whoami::hostname())
 }
 
-fn read_totp(path: &PathBuf) -> Result<TOTP, Box<dyn Error>> {
-    let file_str = std::fs::read_to_string(path)?;
-    Ok(serde_yaml::from_str(&file_str)?)
-}
-
-fn save_totp(path: &PathBuf, totp: &TOTP) -> Result<(), Box<dyn Error>> {
-    let mut file = File::create(path)?;
-    file.write_all(serde_yaml::to_string(&totp)?.as_bytes())?;
-
-    Ok(())
-}
-
 fn view() {
-    match read_totp(&expand_to_pathbuf(TOTP_PATH)) {
+    match totp_pam::read_totp(expand(TOTP_PATH)) {
         Ok(totp) => {
             println!("{}", totp.get_url(&get_label(), TOTP_ISSUER));
         }
@@ -99,9 +82,9 @@ fn view() {
 }
 
 fn save_qr(qr_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    match read_totp(&expand_to_pathbuf(TOTP_PATH)) {
+    match totp_pam::read_totp(expand(TOTP_PATH)) {
         Ok(totp) => {
-            save_qr_from_totp(&expand_to_pathbuf(qr_path), &totp)?;
+            save_qr_from_totp(expand(qr_path), &totp)?;
         }
         Err(_) => {
             eprintln!("I didn't find a TOTP config for your user.");
@@ -110,7 +93,10 @@ fn save_qr(qr_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn save_qr_from_totp(path: &PathBuf, totp: &TOTP) -> Result<(), Box<dyn std::error::Error>> {
+fn save_qr_from_totp<P: AsRef<Path>>(
+    path: P,
+    totp: &TOTP,
+) -> Result<(), Box<dyn std::error::Error>> {
     let code = totp.get_qr(&get_label(), TOTP_ISSUER)?;
     let code_bytes = base64::decode(code)?;
 
@@ -122,15 +108,10 @@ fn save_qr_from_totp(path: &PathBuf, totp: &TOTP) -> Result<(), Box<dyn std::err
 fn check_totp(totp: &TOTP) -> bool {
     print!("Enter a generated token from the TOTP: ");
     io::stdout().flush().unwrap();
-    let time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
 
-    let token = totp.generate(time);
     let user_token: String = read!();
 
-    if token == user_token {
+    if totp_pam::verify_totp(totp, &user_token) {
         println!("Verification successful");
         true
     } else {
@@ -141,8 +122,8 @@ fn check_totp(totp: &TOTP) -> bool {
 
 //Generate a new TOTP.
 fn generate(force: bool, no_verify: bool) -> Result<(), Box<dyn Error>> {
-    let totp_path = expand_to_pathbuf(TOTP_PATH);
-    if !force && totp_path.exists() {
+    let totp_path = expand(TOTP_PATH);
+    if !force && PathBuf::from(&totp_path).exists() {
         if !yesno("Would you like to overwrite the existing TOTP (y/n)? ") {
             return Ok(());
         }
@@ -165,7 +146,7 @@ fn generate(force: bool, no_verify: bool) -> Result<(), Box<dyn Error>> {
             print!("Enter the target path: ");
             io::stdout().flush().unwrap();
             let target_path: String = read!();
-            match save_qr_from_totp(&expand_to_pathbuf(&target_path), &totp) {
+            match save_qr_from_totp(&expand(&target_path), &totp) {
                 Ok(_) => {
                     qr_saved = true;
                     println!("QR Code Saved successfully");
@@ -186,7 +167,7 @@ fn generate(force: bool, no_verify: bool) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    save_totp(&totp_path, &totp)?;
+    totp_pam::save_totp(&totp_path, &totp)?;
 
     println!("Updated TOTP config");
 
