@@ -9,9 +9,10 @@ use text_io::read;
 use std::fs::File;
 use totp_rs::{Algorithm, TOTP};
 
+use totp_pam::{read_totp_for_current_user, get_path_for_current_user, write_totp, verify_totp};
+
 use getrandom::getrandom;
 
-const TOTP_PATH: &'static str = "~/.totp-pam";
 const TOTP_SECRET_SIZE: usize = 20;
 const TOTP_DIGITS: usize = 6;
 const TOTP_SKEW: u8 = 1;
@@ -56,8 +57,10 @@ fn yesno(prompt: &str) -> bool {
     }
 }
 
-fn expand(path_str: &str) -> String {
-    shellexpand::tilde(path_str).into()
+fn expand(path_str: &str) -> PathBuf {
+    let mut pb = PathBuf::new();
+    pb.push(String::from(shellexpand::tilde(path_str)));
+    pb
 }
 
 fn get_totp_secret() -> Vec<u8> {
@@ -71,7 +74,7 @@ fn get_label() -> String {
 }
 
 fn view() {
-    match totp_pam::read_totp(expand(TOTP_PATH)) {
+    match read_totp_for_current_user() {
         Ok(totp) => {
             println!("{}", totp.get_url(&get_label(), TOTP_ISSUER));
         }
@@ -82,7 +85,7 @@ fn view() {
 }
 
 fn save_qr(qr_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    match totp_pam::read_totp(expand(TOTP_PATH)) {
+    match read_totp_for_current_user() {
         Ok(totp) => {
             save_qr_from_totp(expand(qr_path), &totp)?;
         }
@@ -111,7 +114,7 @@ fn check_totp(totp: &TOTP) -> bool {
 
     let user_token: String = read!();
 
-    if totp_pam::verify_totp(totp, &user_token) {
+    if verify_totp(totp, &user_token) {
         println!("Verification successful");
         true
     } else {
@@ -122,8 +125,8 @@ fn check_totp(totp: &TOTP) -> bool {
 
 //Generate a new TOTP.
 fn generate(force: bool, no_verify: bool) -> Result<(), Box<dyn Error>> {
-    let totp_path = expand(TOTP_PATH);
-    if !force && PathBuf::from(&totp_path).exists() {
+    let totp_path = get_path_for_current_user();
+    if !force && totp_path.exists() {
         if !yesno("Would you like to overwrite the existing TOTP (y/n)? ") {
             return Ok(());
         }
@@ -167,7 +170,7 @@ fn generate(force: bool, no_verify: bool) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    totp_pam::save_totp(&totp_path, &totp)?;
+    write_totp(&totp_path, &totp)?;
 
     println!("Updated TOTP config");
 
