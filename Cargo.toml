@@ -1,5 +1,5 @@
 [package]
-name = "totp-pam"
+name = "pam-totp"
 version = "0.1.0"
 authors = ["Nir"]
 edition = "2018"
@@ -7,6 +7,10 @@ edition = "2018"
 [[bin]]
 name = "pam-totp"
 path = "src/bin/cli.rs"
+
+[lib]
+name = "pam_totp"
+crate-type = ["cdylib", "rlib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -9,7 +9,7 @@ use text_io::read;
 use std::fs::File;
 use totp_rs::{Algorithm, TOTP};
 
-use totp_pam::{read_totp_for_current_user, get_path_for_current_user, write_totp, verify_totp};
+use pam_totp::{read_totp_for_current_user, get_path_for_current_user, write_totp, verify_totp};
 
 use getrandom::getrandom;
 
